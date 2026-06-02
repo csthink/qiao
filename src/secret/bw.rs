@@ -85,12 +85,23 @@ fn finish_password(stdout: Vec<u8>) -> Result<Secret> {
     // truncate 就地缩短,不产生新的明文拷贝;被切掉的只可能是换行符,非 key 字节。
     let end = key.trim_end_matches(['\n', '\r']).len();
     key.truncate(end);
+    // 防线二:success + 空 stdout 不是合法 key(条目无 password 字段,或被吞掉的崩溃)。
+    // 宁可报错也不渲染 `*_API_KEY=`(空),以免下游静默用一个不存在的 key。
+    if key.is_empty() {
+        return Err(anyhow!(
+            "bw 返回了空密码:该条目可能没有 password 字段(API key 或存在自定义字段/备注里,v1 暂只读 password 字段)"
+        ));
+    }
     Ok(key)
 }
 
 /// 其它失败 → Err(可操作消息)。把 NotFound 与硬错误分开,便于 exists 复用。
 fn run_get(value: &str) -> Result<Option<Secret>> {
+    // `--nointeraction`:禁止 bw 在锁定/未登录时交互式提示主密码。否则因 stdin 非 TTY,
+    // bw 会读不到输入而崩溃,却仍以**退出码 0 + 空 stdout** 返回,被误当成"取到空 key"。
+    // 加此旗后,锁定 → exit≠0 + stderr `Vault is locked.`,交由 classify 归类成可操作错误。
     let output = Command::new("bw")
+        .arg("--nointeraction")
         .arg("get")
         .arg("password")
         .arg(value)
@@ -152,6 +163,15 @@ mod tests {
         assert_eq!(&*finish_password(b"sk-abc123\n".to_vec()).unwrap(), "sk-abc123");
         assert_eq!(&*finish_password(b"sk-xyz\r\n".to_vec()).unwrap(), "sk-xyz");
         assert_eq!(&*finish_password(b"no-newline".to_vec()).unwrap(), "no-newline");
+    }
+
+    #[test]
+    fn finish_password_rejects_empty() {
+        // success + 空(或仅换行)stdout 必须报错,绝不当成空 key 渲染出 `*_API_KEY=`。
+        for raw in [b"".as_slice(), b"\n", b"\r\n"] {
+            let err = finish_password(raw.to_vec()).unwrap_err().to_string();
+            assert!(err.contains("空密码"), "应报空密码错误,得到:{err}");
+        }
     }
 
     #[test]
