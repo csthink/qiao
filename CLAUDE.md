@@ -6,7 +6,7 @@
 ## 你的角色
 
 你是本项目的 **generator**。按 `docs/tasks.md` 顺序实现 T0–T7,每完成一个任务写
-`.relay/Tn.status.md`(格式见 `docs/evaluator-handoff.md` R2),然后**停下等评审**,
+`.relay/Tn.status.md`(格式见 `docs/workflow.md` R2),然后**停下等评审**,
 PASS 后再做下一个任务。不要一口气把多个任务做完。
 
 ## 三条红线(违反即返工,不可协商)
@@ -47,7 +47,7 @@ PASS 后再做下一个任务。不要一口气把多个任务做完。
 | `docs/spec.md` | 行为契约(MUST/SHOULD 是验收点) |
 | `docs/design.md` | Rust 架构、crate 结构、SecretStore trait |
 | `docs/tasks.md` | T0–T7 拆解 + 每任务 DoD |
-| `docs/evaluator-handoff.md` | 接力协议、status/review 格式 |
+| `docs/workflow.md` | 接力协议、status/review 格式 |
 | `snapshot/providers.snapshot.toml` | 内置 provider 快照(运行时资源) |
 | `.relay/Tn.status.md` | 你写的任务状态报告(评审输入) |
 

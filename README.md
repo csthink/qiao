@@ -57,7 +57,7 @@ env:OPENROUTER_API_KEY         # 环境变量兜底
 | [spec.md](./docs/spec.md) | 可测试的行为契约(命令、引用语法、schema、输出格式) |
 | [design.md](./docs/design.md) | Rust 架构、crate 结构、SecretStore trait |
 | [tasks.md](./docs/tasks.md) | T0–T7 实现任务拆解(单文件单 owner) |
-| [evaluator-handoff.md](./docs/evaluator-handoff.md) | 接力协议:generator/evaluator 分工与验收门 |
+| [workflow.md](./docs/workflow.md) | 接力协议:generator/evaluator 分工与验收门 |
 
 provider 内置快照:[`snapshot/providers.snapshot.toml`](./snapshot/providers.snapshot.toml)(运行时资源)。
 
@@ -69,7 +69,7 @@ provider 内置快照:[`snapshot/providers.snapshot.toml`](./snapshot/providers.
 - **Evaluator**(独立 Claude 会话)对照规格评审,产出 `.relay/Tn.review.md`,PASS 才放行下一任务。
 - **Planner / 仲裁**(维护者)传递 status/review、拍板范围变更、做最终放行。
 
-详见 [evaluator-handoff.md](./docs/evaluator-handoff.md)。
+详见 [workflow.md](./docs/workflow.md)。
 
 ## 技术栈与范围(v1)
 
