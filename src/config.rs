@@ -10,7 +10,7 @@
 //! 仅用于取 home 目录。v1 只验 macOS,但解析逻辑天然跨平台(为跨平台预留,不实现 Linux 专属分支)。
 
 use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
@@ -24,26 +24,31 @@ fn home_dir() -> Result<PathBuf> {
         .context("无法定位用户主目录(HOME 未设置?)")
 }
 
-/// 纯函数:按 "XDG 值优先,否则 home/<fallback_sub>" 解析出应用目录。
+/// 按 "XDG 值优先,否则 home/<fallback_sub>" 解析应用目录。
 ///
-/// 抽出来是为了可在不触碰真实环境变量的前提下单测路径拼接(DoD:路径解析正确)。
-fn resolve_app_dir(xdg: Option<&OsStr>, home: &Path, fallback_sub: &str) -> PathBuf {
+/// `home` **惰性求值**:仅在需要回退时才解析,XDG 已设则根本不触碰 home(故 HOME 缺失
+/// 但 XDG 已设的边缘环境不会无谓报错)。闭包形式同时让单测可注入合成 home、不碰真实环境。
+fn resolve_app_dir(
+    xdg: Option<&OsStr>,
+    fallback_sub: &str,
+    home: impl FnOnce() -> Result<PathBuf>,
+) -> Result<PathBuf> {
     match xdg {
-        Some(x) if !x.is_empty() => PathBuf::from(x).join(APP_DIR),
-        _ => home.join(fallback_sub).join(APP_DIR),
+        Some(x) if !x.is_empty() => Ok(PathBuf::from(x).join(APP_DIR)),
+        _ => Ok(home()?.join(fallback_sub).join(APP_DIR)),
     }
 }
 
 /// 配置目录:`$XDG_CONFIG_HOME/qiao` 或 `~/.config/qiao`。
 pub fn config_dir() -> Result<PathBuf> {
     let xdg = std::env::var_os("XDG_CONFIG_HOME");
-    Ok(resolve_app_dir(xdg.as_deref(), &home_dir()?, ".config"))
+    resolve_app_dir(xdg.as_deref(), ".config", home_dir)
 }
 
 /// 缓存目录:`$XDG_CACHE_HOME/qiao` 或 `~/.cache/qiao`。
 pub fn cache_dir() -> Result<PathBuf> {
     let xdg = std::env::var_os("XDG_CACHE_HOME");
-    Ok(resolve_app_dir(xdg.as_deref(), &home_dir()?, ".cache"))
+    resolve_app_dir(xdg.as_deref(), ".cache", home_dir)
 }
 
 /// 用户 overrides 文件:`<config_dir>/providers.toml`。
@@ -60,22 +65,35 @@ pub fn modelsdev_cache_path() -> Result<PathBuf> {
 mod tests {
     use super::*;
 
+    /// 合成 home(不碰真实环境)。
+    fn alice() -> Result<PathBuf> {
+        Ok(PathBuf::from("/Users/alice"))
+    }
+
     #[test]
     fn xdg_value_wins_when_set() {
-        let home = Path::new("/Users/alice");
-        let dir = resolve_app_dir(Some(OsStr::new("/custom/cfg")), home, ".config");
+        let dir = resolve_app_dir(Some(OsStr::new("/custom/cfg")), ".config", alice).unwrap();
         assert_eq!(dir, PathBuf::from("/custom/cfg/qiao"));
     }
 
     #[test]
+    fn home_not_resolved_when_xdg_set() {
+        // 坐实惰性:XDG 已设时绝不调用 home 解析(否则 panic 会让测试失败)。
+        let dir = resolve_app_dir(Some(OsStr::new("/custom")), ".config", || {
+            panic!("XDG 已设时不应解析 home")
+        })
+        .unwrap();
+        assert_eq!(dir, PathBuf::from("/custom/qiao"));
+    }
+
+    #[test]
     fn falls_back_to_home_subdir_when_xdg_absent() {
-        let home = Path::new("/Users/alice");
         assert_eq!(
-            resolve_app_dir(None, home, ".config"),
+            resolve_app_dir(None, ".config", alice).unwrap(),
             PathBuf::from("/Users/alice/.config/qiao")
         );
         assert_eq!(
-            resolve_app_dir(None, home, ".cache"),
+            resolve_app_dir(None, ".cache", alice).unwrap(),
             PathBuf::from("/Users/alice/.cache/qiao")
         );
     }
@@ -83,9 +101,8 @@ mod tests {
     #[test]
     fn empty_xdg_value_falls_back() {
         // 空字符串视为未设置,回落到 ~/.<sub>。
-        let home = Path::new("/Users/alice");
         assert_eq!(
-            resolve_app_dir(Some(OsStr::new("")), home, ".config"),
+            resolve_app_dir(Some(OsStr::new("")), ".config", alice).unwrap(),
             PathBuf::from("/Users/alice/.config/qiao")
         );
     }
@@ -93,9 +110,8 @@ mod tests {
     #[test]
     fn file_names_are_appended() {
         // 验证最终文件名拼接(不依赖真实 home)。
-        let home = Path::new("/Users/alice");
-        let cfg = resolve_app_dir(None, home, ".config").join("providers.toml");
-        let cache = resolve_app_dir(None, home, ".cache").join("modelsdev.json");
+        let cfg = resolve_app_dir(None, ".config", alice).unwrap().join("providers.toml");
+        let cache = resolve_app_dir(None, ".cache", alice).unwrap().join("modelsdev.json");
         assert!(cfg.ends_with("qiao/providers.toml"));
         assert!(cache.ends_with("qiao/modelsdev.json"));
     }
