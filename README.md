@@ -7,45 +7,350 @@
 **站在巨人肩上,不重复造轮子**:provider/模型目录复用 [models.dev](https://models.dev),
 密钥存储复用操作系统 keychain 与你已有的 Bitwarden/Vaultwarden,qiao 只写很薄的整合层。
 
-> ✅ **当前状态:v1 已实现(macOS)。** 安装与用法见下方[安装与用法](#安装与用法)。
+> ✅ **当前状态:v1 已实现(仅 macOS)。**
 
 ---
 
 ## 它解决什么
 
-用 LangChain 写 agent 时需要频繁切换不同 provider 测试模型,痛点有三:
+用 LangChain 写 agent 时频繁切换 provider 测试,痛点有三:
 
-1. 死知识反复查——每家的 base_url、模型 ID 命名规则、embedding 模型名,每次都要重新搜。
-2. 密钥散落不安全——API key 记在明文笔记里,有泄露和丢失风险。
-3. 切换繁琐——想用某个模型时要手动拼一整套配置。
+1. **死知识反复查**——每家的 base_url、模型 ID 命名、embedding 模型名,每次都要重新搜。
+2. **密钥散落不安全**——API key 记在明文笔记里,有泄露和丢失风险。
+3. **切换繁琐**——想用某个模型就要手动拼一整套配置。
 
-qiao 把这些收敛成几条命令:列出 provider、查看某家配置、取 key 拼出 `.env` 或代码片段。
+qiao 把这些收敛成几条命令:列 provider、看配置、取 key 拼出 `.env` 或代码片段。
 
 ## 核心原则:机密与配置分家
 
 | 类别 | 内容 | 存放 | 是否落盘 |
 |---|---|---|---|
-| 机密 | API key | keychain / `bw` | 否(只存引用) |
+| 机密 | API key | keychain / `bw` | 否(配置里只存**引用**) |
 | 非机密配置 | base_url、模型 ID、embedding、env 变量名 | 配置目录(快照 + models.dev + 覆盖) | 是(明文,可提交/分享) |
 
-qiao 自身**不持有、不落盘**任何密钥。
+qiao 自身**不持有、不落盘**任何密钥;取出的 key 全程用 `Zeroizing` 包裹,离开作用域即擦除。
 
-## 命名约定速查
+## 三个必懂概念
 
-**凭证引用 URI**(配置里只存引用,绝不存 key):
+**① 凭证引用 URI**(配置里只存引用,绝不存 key):
+
 ```
 <backend>:<locator>[#profile]
-keychain:openrouter            # 默认 profile
-keychain:openrouter#work       # 多账号
+keychain:openrouter            # macOS 钥匙串,默认账号
+keychain:openrouter#work       # 多账号用 #profile 区分
 bw:item/OpenRouter API Key     # Bitwarden 按条目名
-bw:id/2a16-445b-...            # Bitwarden 按条目 id(更稳)
+bw:id/2a16-445b-...            # Bitwarden 按条目 id(改名不受影响,更稳)
 env:OPENROUTER_API_KEY         # 环境变量兜底
 ```
 
-**keychain 布局**:`service = "dev.mars.qiao"`,`account = "<provider>[#profile]"`,一个条目一个 key。
+**② keychain 布局**:`service = "dev.mars.qiao"`,`account = "<provider>[#profile]"`,一个条目一个 key。
 
-> 注:Bitwarden 走 **`bw`(Password Manager CLI)**,可连自托管 Vaultwarden;
+**③ 配置三层合并**(低 → 高):**内置快照 < models.dev 缓存 < 你的覆盖**(`~/.config/qiao/providers.toml`)。
+**字段级合并、你写的永远赢**——只覆盖想改的字段,其余沿用低层。
+
+> 注:Bitwarden 一律走 **`bw`(Password Manager CLI)**,可连自托管 Vaultwarden;
 > **不用 `bws`(Secrets Manager)**——它非开源、Vaultwarden 不支持。
+
+---
+
+## 安装
+
+### 前置
+
+- **macOS**(v1 仅支持 macOS)。
+- **Rust 工具链**(`rustup`,stable)。没装过:
+
+  ```sh
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # 官方一键装 rustup(含 cargo)
+  source "$HOME/.cargo/env"                                        # 让当前终端立刻生效
+  cargo --version                                                  # 验证:应打印版本号
+  ```
+
+  > 装过仍报 `cargo: command not found`,多半是终端在安装前就开着了——
+  > `source "$HOME/.cargo/env"` 或新开终端即可。
+
+- **可选** [Bitwarden CLI `bw`](https://bitwarden.com/help/cli/)(仅当你用 `bw` 后端取 key 时):
+
+  ```sh
+  brew install bitwarden-cli      # 或 npm install -g @bitwarden/cli
+  bw --version                    # 验证(注意是 bw,不是 bws)
+  ```
+
+### 安装 qiao
+
+从源码装成单二进制(落到 `~/.cargo/bin/qiao`):
+
+```sh
+git clone https://github.com/csthink/qiao.git
+cd qiao
+cargo install --path .
+qiao --help        # 验证
+```
+
+> 只想本地构建不安装:`cargo build --release`,产物在 `target/release/qiao`。
+
+---
+
+## 走一遍:keychain 路线(默认)
+
+最简单的happy path,从看 provider 到取出 `.env`,全程不碰 Bitwarden。
+
+### 1. 列出所有 provider
+
+合并三层后的清单(内置已预置 openrouter / siliconflow / aliyun_bailian / deepseek):
+
+```sh
+qiao list
+```
+
+### 2. 看某家的完整配置
+
+key 只显示为**引用**,绝不显示明文:
+
+```sh
+qiao show openrouter
+```
+
+```text
+openrouter
+  display_name    : OpenRouter
+  base_url        : https://openrouter.ai/api/v1
+  key_ref         : keychain:openrouter   (引用,不显示明文)
+  env_prefix      : OPENROUTER
+  models.chat     : openai/gpt-5.5
+  models.embedding: baai/bge-m3
+```
+
+### 3. 存入 API key(写进 keychain)
+
+交互式粘贴,**不经命令行参数、不进 shell history、输入不回显**:
+
+```sh
+qiao key set openrouter
+# 粘贴 keychain:openrouter 的 API key(输入不回显,回车确认):
+```
+
+### 4. 校验存没存上
+
+只回 `yes` / `no`,不打印明文:
+
+```sh
+qiao key check openrouter      # → yes
+```
+
+### 5. 取出配置,拼成 `.env` 片段
+
+key 从 keychain 取出,直接可粘进项目的 `.env`:
+
+```sh
+qiao env openrouter
+```
+
+```text
+OPENROUTER_API_KEY=sk-...
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=openai/gpt-5.5
+OPENROUTER_EMBEDDING_MODEL=baai/bge-m3
+```
+
+> 变量名 = `env_prefix` + 固定后缀(`_API_KEY` / `_BASE_URL` / `_MODEL` / `_EMBEDDING_MODEL`);
+> 缺某模型角色就省略对应行(如 deepseek 无 embedding,则无 `_EMBEDDING_MODEL` 行)。
+
+送到剪贴板而非打印:
+
+```sh
+qiao env openrouter --copy
+```
+
+### 6. 或拼成 LangChain 代码片段
+
+```sh
+qiao code openrouter
+```
+
+```python
+from langchain_openai import ChatOpenAI
+llm = ChatOpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    model="openai/gpt-5.5",
+    api_key="sk-...",
+)
+```
+
+---
+
+## 改用 Bitwarden / Vaultwarden 取 key
+
+把某家的 key 放在你已有的 Bitwarden vault 里(自托管 Vaultwarden 也可),qiao 调 `bw` 现取。
+
+### 1. 在 Bitwarden 里建好条目
+
+必须是 **Login** 类型(qiao 调 `bw get password`,只有 Login 有密码字段):
+名称随意(如 `DEEPSEEK_API_KEY`),把 API key 填进 **password 字段**,其余留空,然后同步。
+
+### 2. 登录并解锁 bw CLI
+
+qiao 以**非交互**方式调用 `bw`,所以必须先在你的 shell 里解锁、导出会话:
+
+```sh
+bw config server https://your-vaultwarden.example.com   # 自托管才需要;官方云跳过
+bw login                                                # 首次登录
+export BW_SESSION="$(bw unlock --raw)"                  # 解锁并导出会话(每个新终端都要)
+bw sync                                                 # 拉最新条目
+```
+
+### 3. 拿到条目 id(比按名引用更稳)
+
+按你存的条目名搜出 id,改名也不受影响:
+
+```sh
+bw list items --search DEEPSEEK_API_KEY     # 从输出里取 "id" 字段
+```
+
+### 4. 把 key_ref 指到 bw(写进覆盖文件)
+
+编辑 `~/.config/qiao/providers.toml`:
+
+```toml
+[providers.deepseek]
+key_ref = "bw:id/86f99441-86ee-4632-8fda-21816a94fce2"   # 用上一步的 id
+# 或按条目名:key_ref = "bw:item/DEEPSEEK_API_KEY"
+```
+
+> locator **只支持** `item/<名>` 或 `id/<id>`,别的前缀(如 `bw:llm/...`)会报错。
+
+### 5. 端到端验证
+
+```sh
+qiao show deepseek      # key_ref 应显示 bw:id/...(引用,不显示明文)
+qiao env deepseek
+```
+
+```text
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+DEEPSEEK_MODEL=deepseek-v4-pro
+```
+
+### bw 失败提示一览
+
+所有失败都是人类可读消息(无 panic、不含明文 key):
+
+| 场景 | 触发方式 | qiao 提示 |
+|---|---|---|
+| 已锁定 | 没 `export BW_SESSION` 就取 key | `Bitwarden 已锁定:请先 bw unlock …` |
+| 未登录 | `bw logout` 后取 key | `未登录 Bitwarden:请先 bw login …` |
+| 条目不存在 | `key_ref` 指向不存在的名字/id | `Bitwarden 中未找到对应条目` |
+| 条目无密码 | 条目不是 Login / password 字段空 | `bw 返回了空密码:该条目可能没有 password 字段 …` |
+| locator 写错 | 如 `bw:llm/deepseek` | `未知的 bw 定位类型 llm:只支持 item / id` |
+
+> `qiao key set/check` **只管 keychain**,不写、不验 bw(v1 不通过 qiao 向 bw 写入);
+> bw 的取值直接用 `qiao env` / `qiao code` 验。
+
+---
+
+## 多账号(`#profile`)
+
+同一家多套 key(个人号 / 工作号)用 `#profile` 区分:
+
+```sh
+qiao key set openrouter#work          # 存工作号的 key
+qiao key check openrouter#work
+qiao env openrouter --profile work    # 取工作号
+```
+
+keychain 里对应 `account = "openrouter#work"`;bw 引用写 `bw:item/...#work`。
+
+---
+
+## 自定义 / 补全 provider(本地覆盖)
+
+在 `~/.config/qiao/providers.toml` 写覆盖(三层合并、字段级、你写的永远赢;**只存非机密配置,绝不写 key**):
+
+```toml
+# 只改 base_url(如走自建代理),其余字段仍用快照
+[providers.openrouter]
+base_url = "https://my-proxy.local/v1"
+
+# 新增一家 provider
+[providers.mycorp]
+display_name = "MyCorp"
+base_url     = "https://api.mycorp.com/v1"
+key_ref      = "keychain:mycorp"
+env_prefix   = "MYCORP"
+  [providers.mycorp.models]
+  chat      = "mycorp-large"
+  embedding = "mycorp-embed"
+```
+
+刷新 models.dev 缓存(失败自动保留旧缓存):
+
+```sh
+qiao refresh
+```
+
+> 国内 provider(SiliconFlow / 阿里云百炼)models.dev 收录不全,以**快照 / 你的覆盖**为准,不等上游。
+
+---
+
+## 管理 keychain 里的 key
+
+qiao 只有 `key set` / `key check`,**没有列出 / 删除子命令**——用 macOS 自带的 `security`
+(条目固定 `service = "dev.mars.qiao"`,`account = "<provider>[#profile]"`)。
+
+**列出 qiao 存了哪些 key**(只读元数据,不取明文、不弹密码框):
+
+```sh
+security dump-keychain 2>/dev/null | awk '
+  /"acct"<blob>=/ { a=$0; sub(/.*"acct"<blob>="/,"",a); sub(/".*/,"",a); acct=a }
+  /"svce"<blob>=/ { s=$0; sub(/.*"svce"<blob>="/,"",s); sub(/".*/,"",s);
+                    if (s=="dev.mars.qiao") print acct }'
+```
+
+**确认单个是否存在**(退出码 0=存在):
+
+```sh
+security find-generic-password -s "dev.mars.qiao" -a "openrouter" >/dev/null 2>&1 && echo yes || echo no
+```
+
+**删除某个 key**(不可逆;删前确认别处有备份):
+
+```sh
+security delete-generic-password -s "dev.mars.qiao" -a "openrouter"        # 默认 profile
+security delete-generic-password -s "dev.mars.qiao" -a "openrouter#work"   # 指定 profile
+```
+
+> **把某家从 keychain 整体迁到 bw**:① 在 Bitwarden 建好条目 → ② 改 `key_ref` 为 `bw:id/<id>`
+> → ③ `qiao env <id>` 验证能取到 → ④ **确认无误后**再用上面的 `security delete` 删掉 keychain 旧条目。
+> 顺序别反,否则可能丢 key。
+
+---
+
+## 命令一览
+
+| 命令 | 作用 |
+|---|---|
+| `qiao list` | 列出合并后的所有 provider(名 + base_url) |
+| `qiao show <id>` | 展示某 provider 配置(key 为引用形式,不显示明文) |
+| `qiao key set <id[#profile]>` | 交互式粘贴 key,写入 **keychain** |
+| `qiao key check <id[#profile]>` | 校验 keychain 里有没有该 key(yes/no) |
+| `qiao env <id> [--profile p] [--copy]` | 输出 `.env` 片段 |
+| `qiao code <id> [--profile p] [--copy]` | 输出 LangChain(`ChatOpenAI`)片段 |
+| `qiao refresh` | 重新拉取 models.dev 缓存(失败保留旧缓存) |
+
+> 删除 keychain key 用系统 `security`(见[管理 keychain 里的 key](#管理-keychain-里的-key)),qiao 不提供删除子命令。
+
+---
+
+## 技术栈与范围(v1)
+
+- 语言:Rust(单静态二进制);平台:**仅 macOS**。
+- 密钥后端:`keychain`(默认)/ `bw` / `env`。
+- 目录:models.dev 拉取 + 内置快照兜底 + 用户本地覆盖。
+- 模型角色:`chat` + `embedding`(schema 预留扩展)。
+- 输出:`.env` 片段 + LangChain 代码片段。
+
+**v1 不做**(数据模型为其预留):机密注入子进程(`run --`)、Linux/headless、Vault 后端、GUI、签名公证。
 
 ## 设计文档
 
@@ -60,221 +365,6 @@ env:OPENROUTER_API_KEY         # 环境变量兜底
 | [workflow.md](./docs/workflow.md) | 极简开发流程:节奏、三条红线、按需评审 |
 
 provider 内置快照:[`snapshot/providers.snapshot.toml`](./snapshot/providers.snapshot.toml)(运行时资源)。
-
-## 开发方式
-
-单人、小体量的自用工具,开发流程刻意保持轻:用一个 Claude Code 会话按 `docs/tasks.md`
-顺序实现 T0–T7,每个任务自测、对照 DoD 自验、`git commit`(英文 message)后进入下一个。
-设计文档是唯一事实来源,代码服从文档。只有在某个任务需要"第二双眼睛"时,才另开一个
-独立 Claude 会话做按需评审——不搞强制评审、review 回路或自动编排(对这个规模是过度设计)。
-
-约束以三条红线为底线(范围 / 安全 / bws),写在根目录 `CLAUDE.md`,Claude Code 每个会话自动读取。
-完整流程见 [workflow.md](./docs/workflow.md)。
-
-## 技术栈与范围(v1)
-
-- 语言:Rust(单静态二进制),平台:**仅 macOS**
-- 密钥后端:`keychain`(默认)/ `bw` / `env`
-- 目录:models.dev 拉取 + 内置快照兜底 + 用户本地覆盖
-- 模型角色:`chat` + `embedding`(schema 预留扩展)
-- 输出:`.env` 片段 + LangChain 代码片段
-
-**v1 不做**(数据模型为其预留):机密注入子进程(`run --`)、Linux/headless、Vault 后端、GUI、签名公证。
-
-## 安装与用法
-
-### 前置
-
-- **macOS**(v1 仅支持 macOS)。
-- **Rust 工具链**(`rustup`,stable)。没装过的话:
-
-  ```sh
-  # 官方一键安装 rustup(含 cargo)
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-  # 让当前终端立刻生效(否则会报 `cargo: command not found`);新开终端则自动生效
-  source "$HOME/.cargo/env"
-  cargo --version   # 验证:应打印 cargo 版本
-  ```
-
-  > 已装过但仍报 `cargo: command not found`,多半是终端在安装前就开着了——
-  > `source "$HOME/.cargo/env"` 或新开一个终端窗口即可。
-
-- 可选:[Bitwarden CLI `bw`](https://bitwarden.com/help/cli/)(仅当你用 `bw` 后端取 key 时)。安装:
-
-  ```sh
-  brew install bitwarden-cli      # 推荐;或 npm install -g @bitwarden/cli
-  bw --version                    # 验证(注意是 bw,不是 bws)
-  ```
-
-### 安装
-
-从源码安装(单二进制,装到 `~/.cargo/bin/qiao`):
-
-```sh
-git clone https://github.com/csthink/qiao.git
-cd qiao
-cargo install --path .
-```
-
-或仅构建本地二进制:`cargo build --release`(产物在 `target/release/qiao`)。
-
-### 60 秒上手
-
-```sh
-# 1. 看有哪些 provider(合并:内置快照 + models.dev 缓存 + 你的覆盖)
-qiao list
-
-# 2. 看某家的完整配置(key 只显示为引用,绝不显示明文)
-qiao show openrouter
-
-# 3. 存入 API key —— 交互式粘贴,写进 macOS keychain
-#    （不经命令行参数、不进 shell history;输入不回显）
-qiao key set openrouter
-
-# 4. 校验存没存上(只回 yes/no)
-qiao key check openrouter
-
-# 5. 取出配置,拼成可直接用的 .env 片段(key 从 keychain 取)
-qiao env openrouter
-#   或送到剪贴板:
-qiao env openrouter --copy
-
-# 6. 同样地,拼成 LangChain 代码片段
-qiao code openrouter
-```
-
-多账号用 `#profile`:`qiao key set openrouter#work`、`qiao env openrouter --profile work`。
-
-刷新 provider 目录(从 models.dev 拉取,失败自动保留旧缓存):`qiao refresh`。
-
-### 命令一览
-
-| 命令 | 作用 |
-|---|---|
-| `qiao list` | 列出合并后的所有 provider(名 + base_url) |
-| `qiao show <id>` | 展示某 provider 配置(key 为引用形式,不显示明文) |
-| `qiao key set <id[#profile]>` | 交互式粘贴 key,写入 keychain |
-| `qiao key check <id[#profile]>` | 校验 keychain 里有没有该 key(yes/no) |
-| `qiao env <id> [--profile p] [--copy]` | 输出 `.env` 片段 |
-| `qiao code <id> [--profile p] [--copy]` | 输出 LangChain(`ChatOpenAI`)片段 |
-| `qiao refresh` | 重新拉取 models.dev 缓存(失败保留旧缓存) |
-
-> **查 keychain 里 qiao 存了哪些 key**:`qiao key check <id>` 只能逐个问;要列全部条目,
-> 用 `security` 按 service 过滤(只读元数据,不取明文、不弹密码框):
->
-> ```sh
-> # 列出 service=dev.mars.qiao 的所有 account(即 <provider>[#profile])
-> security dump-keychain 2>/dev/null | awk '
->   /"acct"<blob>=/ { a=$0; sub(/.*"acct"<blob>="/,"",a); sub(/".*/,"",a); acct=a }
->   /"svce"<blob>=/ { s=$0; sub(/.*"svce"<blob>="/,"",s); sub(/".*/,"",s);
->                     if (s=="dev.mars.qiao") print acct }'
->
-> # 或只确认单个是否存在(退出码 0=存在,非 0=没有)
-> security find-generic-password -s "dev.mars.qiao" -a "openrouter" >/dev/null 2>&1 && echo yes || echo no
-> ```
->
-> **删除 keychain 里的 key**:qiao 没有删除子命令,用系统自带的 `security`(条目固定
-> `service = "dev.mars.qiao"`,`account = "<provider>[#profile]"`):
->
-> ```sh
-> security delete-generic-password -s "dev.mars.qiao" -a "openrouter"        # 默认 profile
-> security delete-generic-password -s "dev.mars.qiao" -a "openrouter#work"   # 指定 profile
-> ```
->
-> 操作不可逆;删前确认 key 在别处(如 Bitwarden)有备份。想全部改走 bw,把各 provider 的
-> `key_ref` 改成 `bw:id/<id>`(见 [用 Bitwarden 取 key](#用-bitwarden--vaultwarden-取-key))后再删。
-
-### 自定义 / 补全 provider(本地覆盖)
-
-配置三层合并(低 → 高):**内置快照 < models.dev 缓存 < 你的覆盖**,**字段级合并、你写的永远赢**。
-在 `~/.config/qiao/providers.toml` 写覆盖即可(只存非机密配置,**绝不写 key**):
-
-```toml
-# 改某家的 base_url(如走自建代理),其余字段仍用快照
-[providers.openrouter]
-base_url = "https://my-proxy.local/v1"
-
-# 新增一家 provider
-[providers.mycorp]
-display_name = "MyCorp"
-base_url     = "https://api.mycorp.com/v1"
-key_ref      = "keychain:mycorp"
-env_prefix   = "MYCORP"
-  [providers.mycorp.models]
-  chat = "mycorp-large"
-```
-
-> 国内 provider(SiliconFlow / 阿里云百炼)以**快照 / 你的覆盖**为准,不等上游 models.dev 收录。
-
-### 用 Bitwarden / Vaultwarden 取 key
-
-把某家的 `key_ref` 指到 `bw` 后端(在覆盖文件里),key 仍存在你的 Bitwarden vault:
-
-```toml
-[providers.openrouter]
-key_ref = "bw:item/OpenRouter API Key"   # 按条目名;或 bw:id/<条目 id>(更稳)
-```
-
-前置:先安装 `bw`、再登录并解锁 CLI——
-
-```sh
-brew install bitwarden-cli                              # 安装 bw(或 npm install -g @bitwarden/cli)
-bw config server https://your-vaultwarden.example.com   # 自托管 Vaultwarden(官方云可跳过)
-bw login
-export BW_SESSION="$(bw unlock --raw)"
-qiao env openrouter   # qiao 会调用 bw get 取 key
-```
-
-按你存的条目名(如 `DEEPSEEK_API_KEY`)搜出条目 **id**,写成 `bw:id/<id>` 比按名引用更稳(改名不受影响):
-
-```sh
-bw list items --search DEEPSEEK_API_KEY   # 从输出里取 "id" 字段
-# 然后:key_ref = "bw:id/<上面的 id>"
-```
-
-> Bitwarden 一律走 **`bw`(Password Manager CLI)**,可连自托管 Vaultwarden;
-> **不用 `bws`(Secrets Manager)**——它非开源、Vaultwarden 不支持。
-
-### 验证 bw 后端(端到端自测)
-
-完整跑一遍"从 Vaultwarden 取 key"(自测可用占位串当 key):
-
-1. 在 Bitwarden 建一个 **Login** 类型条目(类型必须是 Login——qiao 调 `bw get password`,只有 Login 有密码字段):
-   - 名称如 `deepseek`,**password 字段**填 key(自测可填 `test`),其余字段留空。
-2. 同步,并确认 `bw` 自己取得到(先排除 qiao 之外的问题):
-
-   ```sh
-   bw sync
-   bw get password "deepseek"      # 应原样打印你填的 key
-   ```
-3. 把该 provider 的 `key_ref` 指到 bw(`~/.config/qiao/providers.toml`):
-
-   ```toml
-   [providers.deepseek]
-   key_ref = "bw:item/deepseek"    # locator 只支持 item/<名> 或 id/<id>;别的前缀会报错
-   ```
-4. 端到端取 key 并渲染:
-
-   ```sh
-   qiao show deepseek    # key_ref 应显示 bw:item/deepseek(引用,不显示明文)
-   qiao env deepseek
-   # DEEPSEEK_API_KEY=test
-   # DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-   # DEEPSEEK_MODEL=deepseek-v4-pro
-   ```
-
-失败路径也应给可操作提示(均为人类可读消息,无 panic):
-
-| 场景 | 触发方式 | qiao 提示 |
-|---|---|---|
-| 已锁定 | `unset BW_SESSION` 后取 key | `Bitwarden 已锁定:请先 bw unlock …` |
-| 未登录 | `bw logout` 后取 key | `未登录 Bitwarden:请先 bw login …` |
-| 条目不存在 | `key_ref` 指向不存在的名字 | `Bitwarden 中未找到对应条目` |
-| locator 写错 | 如 `bw:llm/deepseek` | `未知的 bw 定位类型 llm:只支持 item / id` |
-
-> - 用 **id 更稳**:`bw list items --search deepseek` 取 `"id"`,写成 `key_ref = "bw:id/<id>"`,改名也不受影响。
-> - `qiao key set/check` 只管 **keychain**,不验 bw;bw 的取值用 `qiao env`/`code` 验。
-> - 自测完删掉占位条目与 `providers.toml` 里的测试覆盖即可还原。
 
 ## License
 
