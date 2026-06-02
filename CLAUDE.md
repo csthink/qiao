@@ -35,6 +35,9 @@ PASS 后再做下一个任务。不要一口气把多个任务做完。
 - **DoD 即验收点**:动手前先复述该任务的 DoD(完成定义),实现后逐条对照,在 status 文件里说明如何满足。
 - **错误可读**:所有面向用户的错误是人类可读消息,不是 Rust panic backtrace。
 - **质量门**:提交前 `cargo build`、`cargo test`、`cargo clippy` 应通过(clippy 无 error)。
+- **任务即提交**:每个任务完成后,generator 必须先 commit(再写/更新 status),
+  commit message 形如 `T0: project scaffold`。一个任务对应一个独立 commit,
+  作为该任务的评审快照。未 commit 不算任务完成。
 
 ## 关键文件导航
 
