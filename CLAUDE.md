@@ -49,6 +49,9 @@
 - **Commit 语言**:所有 commit message 一律用英文,遵循 `<type/Tn>: <summary>` 形式
   (如 `T2: implement provider catalog merge`、`docs: simplify workflow`)。一个任务对应一个独立 commit,
   作为该任务的评审快照。未 commit 不算任务完成。
+- **只提交本任务的改动**:commit 前先 `git status` 看清待提交清单,**只 `git add` 属于当前任务 Tn 的文件**,
+  不要用 `git add -A` / `git add .` 把工作区里其它未提交的改动(如 maintainer 正在编辑的文档)一起带走。
+  若发现工作区有不属于本任务的改动,**停下来问我**,不要擅自提交或还原。
 
 ## 关键文件导航
 
