@@ -1,0 +1,59 @@
+# qiao 内置 provider 快照(兜底层)
+# ---------------------------------------------------------------------------
+# 合并优先级(低 → 高):本快照 < models.dev 拉取缓存 < 用户 overrides(~/.config/qiao/providers.toml)
+# 用途:① 离线/首次运行时的兜底；② 补全 models.dev 对国内 provider 覆盖不足的字段。
+# 注意:此文件只存"非机密配置"。key_ref 仅是"去哪取 key"的引用,绝不含 key 明文。
+# schema 见 spec.md S3;模型角色 v1 识别 chat / embedding,未知角色保留不报错。
+# ---------------------------------------------------------------------------
+
+# ===== OpenRouter(聚合平台,OpenAI 兼容)=====
+[providers.openrouter]
+display_name = "OpenRouter"
+base_url     = "https://openrouter.ai/api/v1"
+key_ref      = "keychain:openrouter"
+env_prefix   = "OPENROUTER"
+naming_note  = "模型 ID 形如 vendor/model,前缀是 vendor,例:anthropic/claude-opus-4.8、deepseek/deepseek-chat"
+
+  [providers.openrouter.models]
+  chat      = "openai/gpt-5.5"
+  embedding = "baai/bge-m3"          # 多语言/中文强,1024 维
+
+# ===== SiliconFlow(OpenAI 兼容)=====
+# models.dev 对国内 provider 覆盖通常不全,此处直接给定,以本快照/用户 overrides 为准。
+[providers.siliconflow]
+display_name = "SiliconFlow"
+base_url     = "https://api.siliconflow.cn/v1"
+key_ref      = "keychain:siliconflow"
+env_prefix   = "SILICONFLOW"
+naming_note  = "OpenAI 兼容,模型 ID 含组织前缀,例:deepseek-ai/DeepSeek-V4-Pro、BAAI/bge-large-zh-v1.5"
+
+  [providers.siliconflow.models]
+  chat      = "deepseek-ai/DeepSeek-V4-Pro"
+  embedding = "BAAI/bge-large-zh-v1.5"
+
+# ===== 阿里云百炼(DashScope,OpenAI 兼容模式)=====
+[providers.aliyun_bailian]
+display_name = "阿里云百炼 (DashScope)"
+base_url     = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+key_ref      = "keychain:aliyun_bailian"
+env_prefix   = "ALIYUN_BAILIAN"
+naming_note  = "走 OpenAI 兼容模式端点;模型名为 DashScope 名称,例:qwen3.7-max、text-embedding-v3"
+
+  [providers.aliyun_bailian.models]
+  chat      = "qwen3.7-max"
+  embedding = "text-embedding-v3"
+
+# ===== DeepSeek 原生(OpenAI 兼容)=====
+# 注意:旧模型名 deepseek-chat / deepseek-reasoner 计划于 2026-07-24 废弃,
+#       默认改用当前 V4 模型名 deepseek-v4-pro(另有 deepseek-v4-flash 偏低延迟/低成本)。
+#       DeepSeek 原生未提供 embedding 端点,故 embedding 留空。
+[providers.deepseek]
+display_name = "DeepSeek"
+base_url     = "https://api.deepseek.com/v1"
+key_ref      = "keychain:deepseek"
+env_prefix   = "DEEPSEEK"
+naming_note  = "OpenAI/Anthropic 兼容;当前模型:deepseek-v4-pro、deepseek-v4-flash(旧名 2026-07-24 废弃);无原生 embedding"
+
+  [providers.deepseek.models]
+  chat = "deepseek-v4-pro"
+  # embedding: DeepSeek 原生不提供;如需 embedding 可改用 siliconflow / aliyun_bailian
