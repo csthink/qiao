@@ -1,3 +1,11 @@
-docs
-CLAUDE.md
-README.md
+# === 安全:绝不能进仓库 ===
+.env
+.env.*
+*.log
+
+# === Rust 构建产物 ===
+/target/
+**/*.rs.bk
+
+# === macOS ===
+.DS_Store
