@@ -16,6 +16,8 @@ mod config;
 mod cred_ref;
 #[allow(dead_code)]
 mod model;
+#[allow(dead_code, unused_imports)]
+mod render;
 #[allow(dead_code)]
 mod secret;
 
