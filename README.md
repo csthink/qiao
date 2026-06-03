@@ -99,6 +99,36 @@ brew install bitwarden-cli      # 或 npm install -g @bitwarden/cli
 bw --version                    # 验证(注意是 bw,不是 bws)
 ```
 
+### 卸载 / 切换安装方式
+
+两种装法落到不同位置(brew → `/opt/homebrew/bin`,源码 → `~/.cargo/bin`),**互不覆盖**;
+同时装会按 PATH 顺序决定 `llmkeys` 指向谁(`type -a llmkeys` 可看全部)。切换前先卸旧的,免得混。
+
+**卸载 Homebrew 版:**
+
+```sh
+brew uninstall llmkeys
+brew untap csthink/tap      # 可选:不再关注更新就移除 tap
+```
+
+**卸载源码(cargo)版:**
+
+```sh
+cargo uninstall llmkeys     # 移除 ~/.cargo/bin/llmkeys
+```
+
+**从源码切到 Homebrew**(常见场景):
+
+```sh
+cargo uninstall llmkeys                 # 先卸源码版
+brew install csthink/tap/llmkeys        # 再装 brew 版
+```
+
+> 卸载只动二进制。你的**配置**(`~/.config/llmkeys/`)、**models.dev 缓存**(`~/.cache/llmkeys/`)
+> 和 **keychain 里的 key**(`service = dev.mars.llmkeys`)都不受影响,换装法不会丢。
+> 要彻底清掉配置/缓存:`rm -rf ~/.config/llmkeys ~/.cache/llmkeys`;
+> keychain key 用 [`security delete`](#管理-keychain-里的-key)。
+
 ---
 
 ## 走一遍:keychain 路线(默认)
