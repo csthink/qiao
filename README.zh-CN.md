@@ -1,5 +1,7 @@
 # llmkeys
 
+[English](./README.md) | **简体中文**
+
 > 多家 LLM provider 的密钥与配置管家。从 keychain / Bitwarden 取出 API key,
 > 一键生成可直接粘贴的 `.env` 片段或 LangChain 代码片段——免去每次 google provider、
 > 翻文档找 base_url、再去后台找 key 的重复劳动。
