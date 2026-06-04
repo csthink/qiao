@@ -55,3 +55,53 @@ jobs:
             ${{ steps.package.outputs.asset }}
             ${{ steps.package.outputs.asset }}.sha256
           fail_on_unmatched_files: true
+
+  # 两个架构都构建完后,把 csthink/homebrew-tap 的 llmkeys 公式更新到本次版本。
+  # 只覆写 url 里的版本号 + 两个 sha256;desc/caveats/test 仍由 tap 仓自己拥有。
+  update-tap:
+    name: update homebrew tap
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.ref_name, '-') }}   # rc/beta 预发布不动 tap
+    steps:
+      - name: Checkout llmkeys (for bump script)
+        uses: actions/checkout@v4
+
+      - name: Read sha256 sums from this release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "${{ github.repository }}" \
+            --pattern "*.sha256" --dir shas
+          {
+            echo "VERSION=$version"
+            echo "ARM_SHA=$(awk '{print $1}' "shas/llmkeys-${version}-aarch64-apple-darwin.tar.gz.sha256")"
+            echo "INTEL_SHA=$(awk '{print $1}' "shas/llmkeys-${version}-x86_64-apple-darwin.tar.gz.sha256")"
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: csthink/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}   # 需手动创建:见下方说明
+          path: tap
+
+      - name: Bump formula
+        run: python3 .github/scripts/bump-formula.py tap/Formula/llmkeys.rb
+
+      - name: Commit & push
+        run: |
+          set -euo pipefail
+          cd tap
+          if git diff --quiet; then
+            echo "formula already up to date for ${VERSION}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/llmkeys.rb
+          git commit -m "llmkeys ${VERSION}"
+          git push
