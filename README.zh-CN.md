@@ -394,17 +394,7 @@ security delete-generic-password -s "dev.mars.llmkeys" -a "openrouter#work"   # 
 
 **v1 不做**(数据模型为其预留):机密注入子进程(`run --`)、Linux/headless、Vault 后端、GUI、签名公证。
 
-## 设计文档
-
-完整规格在 [`docs/`](./docs/):
-
-| 文档 | 内容 |
-|---|---|
-| [proposal.md](./docs/proposal.md) | 动机、范围、已锁定决策 |
-| [spec.md](./docs/spec.md) | 可测试的行为契约(命令、引用语法、schema、输出格式) |
-| [design.md](./docs/design.md) | Rust 架构、crate 结构、SecretStore trait |
-| [tasks.md](./docs/tasks.md) | T0–T7 实现任务拆解(单文件单 owner) |
-| [workflow.md](./docs/workflow.md) | 极简开发流程:节奏、三条红线、按需评审 |
+## 参考
 
 provider 内置快照:[`snapshot/providers.snapshot.toml`](./snapshot/providers.snapshot.toml)(运行时资源)。
 

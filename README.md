@@ -427,23 +427,12 @@ security delete-generic-password -s "dev.mars.llmkeys" -a "openrouter#work"   # 
 **Not in v1** (the data model reserves room for them): secret injection into a subprocess
 (`run --`), Linux/headless, Vault backend, GUI, code signing/notarization.
 
-## Design docs
-
-The full spec lives in [`docs/`](./docs/):
-
-| Doc | Contents |
-|---|---|
-| [proposal.md](./docs/proposal.md) | Motivation, scope, locked decisions |
-| [spec.md](./docs/spec.md) | Testable behavior contract (commands, reference syntax, schema, output formats) |
-| [design.md](./docs/design.md) | Rust architecture, crate structure, the SecretStore trait |
-| [tasks.md](./docs/tasks.md) | T0–T7 implementation breakdown (one owner per file) |
-| [workflow.md](./docs/workflow.md) | Minimal dev process: cadence, the three red lines, review on demand |
+## Reference
 
 Built-in provider snapshot:
 [`snapshot/providers.snapshot.toml`](./snapshot/providers.snapshot.toml) (runtime resource).
 
-> The design docs are written in Chinese; see [`README.zh-CN.md`](./README.zh-CN.md) for the
-> Chinese version of this README.
+> See [`README.zh-CN.md`](./README.zh-CN.md) for the Chinese version of this README.
 
 ## License
 
